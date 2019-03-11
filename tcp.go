@@ -26,7 +26,8 @@ const tcpAddrSolveErr,
 	 marshalErr,
 	 primaryDialErr,
 	 resolveTCPErr,
-	 connWriteErr string =
+	 connWriteErr,
+	 clientDialErr string =
 		"solving the TCPAddr",
 		"trying to listen to TCP packets",
 		"trying to accept a TCP connection",
@@ -35,7 +36,8 @@ const tcpAddrSolveErr,
 		"try to marshal struct",
 		"trying to dial the Primary Server",
 		"trying to resolve TCP Address",
-		"trying to write through connection"
+		"trying to write through connection",
+		"trying to dial from the client"
 
 const cldntDial,
 	cldntReq,
@@ -145,12 +147,6 @@ func primaryServer(network, address string) {
 					return
 				}
 
-				if req.EndConn {
-					fmt.Println("Ending this connection.")
-					connection.Close()
-					return
-				}
-
 				response := serviceResponse{ services[req.ServiceName](req.Values), true }
 
 				res, err := json.Marshal(response)
@@ -164,6 +160,12 @@ func primaryServer(network, address string) {
 
 				if err != nil {
 					fmt.Println(genericErrMsg(connWriteErr, err))
+					connection.Close()
+					return
+				}
+
+				if req.EndConn {
+					fmt.Println("Ending this connection.")
 					connection.Close()
 					return
 				}
@@ -290,6 +292,12 @@ func requiringServer(network, address string) {
 					connection.Close()
 					return
 				}
+
+				if req.EndConn {
+					fmt.Println("Ending this connection")
+					connection.Close()
+					return
+				}
 			}
 		}(conn)
 	}
@@ -299,6 +307,60 @@ func requiringServer(network, address string) {
 func client(wg *sync.WaitGroup) {
 	defer wg.Done()
 	wg.Add(1)
+
+	genericErrMsg := newGenericErrMsgr("the Client", "tcp", "localhost")
+
+	testString := "This is a test string."
+
+	raddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(hostName, requiringServerPort))
+
+	if err != nil {
+		fmt.Println(genericErrMsg(resolveTCPErr, err))
+		return
+	}
+
+	conn, err := net.DialTCP("tcp", nil, raddr)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(clientDialErr, err))
+		return
+	}
+
+	request := serviceRequest{ "store", testString, true }
+	req, err := json.Marshal(request)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(marshalErr, err))
+		return
+	}
+
+	req = append(req, '\n')
+	_, err = conn.Write(req)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(connWriteErr, err))
+		return
+	}
+
+	response, err := bufio.NewReader(conn).ReadString('\n')
+
+	if err != nil {
+		fmt.Println(genericErrMsg(connReadErr, err))
+		return
+	}
+
+	var res serviceResponse
+	err = json.Unmarshal([]byte(response), &res)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(unmarshalErr, err))
+		return
+	}
+
+	cipheredString := res.Values
+
+	// TODO Request unciphering from Primary Server
+	fmt.Println(cipheredString)
 }
 
 func main() {
