@@ -25,7 +25,8 @@ const tcpAddrSolveErr,
 	 unmarshalErr,
 	 marshalErr,
 	 primaryDialErr,
-	 resolveTCPErr string =
+	 resolveTCPErr,
+	 connWriteErr string =
 		"solving the TCPAddr",
 		"trying to listen to TCP packets",
 		"trying to accept a TCP connection",
@@ -33,7 +34,8 @@ const tcpAddrSolveErr,
 		"trying to unmarshal JSON",
 		"try to marshal struct",
 		"trying to dial the Primary Server",
-		"trying to resolve TCP Address"
+		"trying to resolve TCP Address",
+		"trying to write through connection"
 
 const cldntDial,
 	cldntReq,
@@ -160,7 +162,9 @@ func primaryServer(network, address string) {
 				_, err = connection.Write(res)
 
 				if err != nil {
-
+					fmt.Println(genericErrMsg(connWriteErr, err))
+					connection.Close()
+					return
 				}
 			}
 		}(conn)
