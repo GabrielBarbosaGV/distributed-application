@@ -24,19 +24,25 @@ const tcpAddrSolveErr,
 	 connReadErr,
 	 unmarshalErr,
 	 marshalErr,
-	 primaryDialErr string =
+	 primaryDialErr,
+	 resolveTCPErr string =
 		"solving the TCPAddr",
 		"trying to listen to TCP packets",
 		"trying to accept a TCP connection",
 		"trying to read string from connection",
 		"trying to unmarshal JSON",
 		"try to marshal struct",
-		"trying to dial the Primary Server"
+		"trying to dial the Primary Server",
+		"trying to resolve TCP Address"
 
 const cldntDial,
-	cldntReq string =
+	cldntReq,
+	cldntRead,
+	cldntUnmarshal string =
 		"Internal Error: Could not dial Primary Server",
-		"Internal Error: Could not generate proper request to Primary Server (Marshal Error)"
+		"Internal Error: Could not generate proper request to Primary Server (Marshal Error)",
+		"Internal Error: Could not read response from Primary Server",
+		"Internal Error: Could not parse response from Primary Server (Unmarshal Error)"
 
 type serviceRequest struct {
 	ServiceName string `json:"sn"`
@@ -150,7 +156,8 @@ func primaryServer(network, address string) {
 					fmt.Println(genericErrMsg(marshalErr, err))
 				}
 
-				_, err := connection.Write(res)
+				res = append(res, '\n')
+				_, err = connection.Write(res)
 
 				if err != nil {
 
@@ -169,7 +176,13 @@ func requiringServer(network, address string) {
 
 	services := map[string] func (string) string {
 		"store": func (toStore string) string {
-			conn, err := net.DialTCP(network, nil, net.JoinHostPort(hostName, primaryServerPort))
+			raddr, err := net.ResolveTCPAddr(network, net.JoinHostPort(hostName, primaryServerPort))
+
+			if err != nil {
+				fmt.Println(genericErrMsg(resolveTCPErr, err))
+			}
+
+			conn, err := net.DialTCP(network, nil, raddr)
 
 			if err != nil {
 				fmt.Println(genericErrMsg(primaryDialErr, err))
@@ -185,11 +198,28 @@ func requiringServer(network, address string) {
 				return cldntReq
 			}
 
+			req = append(req, '\n')
+			conn.Write(req)
 
+			response, err := bufio.NewReader(conn).ReadString('\n')
 
-			// TODO
-			return "placeholder"
-		}
+			if err != nil {
+				fmt.Println(genericErrMsg(connReadErr, err))
+				return cldntRead
+			}
+
+			var res serviceResponse
+			err = json.Unmarshal([]byte(response), &res)
+
+			if err != nil {
+				fmt.Println(genericErrMsg(unmarshalErr, err))
+				return cldntUnmarshal
+			}
+
+			storedString = res.Values
+
+			return res.Values
+		},
 	}
 }
 
