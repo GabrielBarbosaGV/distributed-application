@@ -134,7 +134,6 @@ func primaryServer(network, address string) {
 				if err != nil {
 					fmt.Println(genericErrMsg(connReadErr, err))
 					connection.Close()
-					// TODO Close in other error cases
 					return
 				}
 
@@ -231,6 +230,68 @@ func requiringServer(network, address string) {
 
 			return res.Values
 		},
+	}
+	
+	laddr, err := net.ResolveTCPAddr(network, address)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(resolveTCPErr, err))
+	}
+
+	ln, err := net.ListenTCP(network, laddr)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(tcpListenErr, err))
+	}
+
+	for {
+		conn, err := ln.AcceptTCP()
+
+		if err != nil {
+			fmt.Println(genericErrMsg(acceptTCPErr, err))
+		}
+
+		go func(connection *net.TCPConn) {
+			reader := bufio.NewReader(connection)
+
+			for {
+				message, err := reader.ReadString('\n')
+
+				if err != nil {
+					fmt.Println(genericErrMsg(connReadErr, err))
+					connection.Close()
+					return
+				}
+
+				var req serviceRequest
+				err = json.Unmarshal([]byte(message), &req)
+
+				if err != nil {
+					fmt.Println(genericErrMsg(unmarshalErr, err))
+					connection.Close()
+					return
+				}
+
+				response := serviceResponse{ services[req.ServiceName](req.Values), true }
+
+				res, err := json.Marshal(response)
+
+				if err != nil {
+					fmt.Println(genericErrMsg(marshalErr, err))
+					connection.Close()
+					return
+				}
+
+				res = append(res, '\n')
+				_, err = connection.Write([]byte(res))
+
+				if err != nil {
+					fmt.Println(genericErrMsg(connWriteErr, err))
+					connection.Close()
+					return
+				}
+			}
+		}(conn)
 	}
 }
 
