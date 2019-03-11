@@ -40,11 +40,13 @@ const tcpAddrSolveErr,
 const cldntDial,
 	cldntReq,
 	cldntRead,
-	cldntUnmarshal string =
+	cldntUnmarshal,
+	cldntWrite string =
 		"Internal Error: Could not dial Primary Server",
 		"Internal Error: Could not generate proper request to Primary Server (Marshal Error)",
 		"Internal Error: Could not read response from Primary Server",
-		"Internal Error: Could not parse response from Primary Server (Unmarshal Error)"
+		"Internal Error: Could not parse response from Primary Server (Unmarshal Error)",
+		"Internal Error: Could not write request to Primary Server"
 
 type serviceRequest struct {
 	ServiceName string `json:"sn"`
@@ -203,7 +205,12 @@ func requiringServer(network, address string) {
 			}
 
 			req = append(req, '\n')
-			conn.Write(req)
+			_, err = conn.Write(req)
+
+			if err != nil {
+				fmt.Println(genericErrMsg(connWriteErr, err))
+				return cldntWrite
+			}
 
 			response, err := bufio.NewReader(conn).ReadString('\n')
 
