@@ -91,18 +91,18 @@ func primaryServer(network, address string) {
 
 			return string(bytesToCipher[:])
 		},
-		"unrot13": func(toUncipher string) string {
-			bytesToUncipher := []byte(toUncipher)
+		"unrot13": func(toDecipher string) string {
+			bytesToDecipher := []byte(toDecipher)
 
-			for i, v := range bytesToUncipher {
+			for i, v := range bytesToDecipher {
 				if v >= 65 && v <= 90 {
-					bytesToUncipher[i] = (((v - 65 + 26) - 13) % 26) + 65
+					bytesToDecipher[i] = (((v - 65 + 26) - 13) % 26) + 65
 				} else if v >= 97 && v <= 122 {
-					bytesToUncipher[i] = (((v - 97 + 26) - 13) % 26) + 97
+					bytesToDecipher[i] = (((v - 97 + 26) - 13) % 26) + 97
 				}
 			}
 
-			return string(bytesToUncipher[:])
+			return string(bytesToDecipher[:])
 		},
 	}
 
@@ -196,7 +196,7 @@ func requiringServer(network, address string) {
 				return cldntDial
 			}
 
-			request := serviceRequest{ "rot13", storedString, false }
+			request := serviceRequest{ "rot13", toStore, false }
 
 			req, err := json.Marshal(request)
 
@@ -306,7 +306,6 @@ func requiringServer(network, address string) {
 // Cliente, faz requisições
 func client(wg *sync.WaitGroup) {
 	defer wg.Done()
-	wg.Add(1)
 
 	genericErrMsg := newGenericErrMsgr("the Client", "tcp", "localhost")
 
@@ -359,7 +358,7 @@ func client(wg *sync.WaitGroup) {
 
 	cipheredString := res.Values
 
-	// TODO Request unciphering from Primary Server
+	// TODO Request deciphering from Primary Server
 	fmt.Println(cipheredString)
 }
 
@@ -371,6 +370,7 @@ func main() {
 	go requiringServer(network, requiringServerAddress)
 
 	var wg sync.WaitGroup
+	wg.Add(1)
 	go client(&wg)
 
 	defer wg.Wait()
