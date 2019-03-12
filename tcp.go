@@ -360,7 +360,57 @@ func client(wg *sync.WaitGroup) {
 
 	// TODO Request deciphering from Primary Server
 	fmt.Println(cipheredString)
+
+	request = serviceRequest{ "unrot13", cipheredString, true }
+	req, err = json.Marshal(request)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(marshalErr, err))
+		return
+	}
+
+	raddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort(hostName, primaryServerPort))
+
+	if err != nil {
+		fmt.Println(genericErrMsg(resolveTCPErr, err))
+		return
+	}
+
+	conn, err = net.DialTCP("tcp", nil, raddr)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(clientDialErr, err))
+		return
+	}
+
+	req = append(req, '\n')
+	_, err = conn.Write(req)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(connWriteErr, err))
+		return
+	}
+
+	response, err = bufio.NewReader(conn).ReadString('\n')
+
+	if err != nil {
+		fmt.Println(genericErrMsg(connReadErr, err))
+		return
+	}
+
+	// res já foi declarada
+	err = json.Unmarshal([]byte(response), &res)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(unmarshalErr, err))
+		return
+	}
+
+	decipheredString := res.Values
+
+	fmt.Println(decipheredString)
 }
+
 
 func main() {
 	primaryServerAddress := net.JoinHostPort(hostName, primaryServerPort)
