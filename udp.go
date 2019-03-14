@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"bytes"
 )
 
 // Server configuration strings
@@ -119,6 +120,15 @@ func primaryServer(network, addressRequiring, addressClient string) {
 		return
 	}
 
+	/*
+	_, writeBackAddr, err := conn.ReadFromUDP([]byte(""))
+
+	if err != nil {
+		fmt.Println(genericErrMsg(resolveUDPErr, err))
+		return
+	}
+	*/
+
 	udpAddr2, err := net.ResolveUDPAddr(network, addressClient)
 
 	if err != nil {
@@ -133,17 +143,30 @@ func primaryServer(network, addressRequiring, addressClient string) {
 		return
 	}
 
+	/*
+	_, writeBackAddr2, err := conn2.ReadFromUDP([]byte(""))
+
+	if err != nil {
+		fmt.Println(genericErrMsg(resolveUDPErr, err))
+		return
+	}
+	*/
+
 	for {
-		message, err := bufio.NewReader(conn).ReadString('\n')
+		message := make([]byte, 1024)
+		_, writeBackAddr, err := conn.ReadFromUDP(message)
+
+		message = bytes.Trim(message, "\x00")
 
 		if err != nil {
-			fmt.Println(genericErrMsg(connReadErr, err))
-			conn.Close()
+			fmt.Println(genericErrMsg(resolveUDPErr, err))
 			continue
 		}
 
 		var req serviceRequest
-		err = json.Unmarshal([]byte(message), &req)
+		err = json.Unmarshal(message, &req)
+
+		fmt.Println(string(message[:]))
 
 		if err != nil {
 			fmt.Println(genericErrMsg(unmarshalErr, err))
@@ -159,9 +182,10 @@ func primaryServer(network, addressRequiring, addressClient string) {
 		}
 
 		res = append(res, '\n')
-		_, err = conn.Write(res)
+		_, err = conn.WriteTo(res, writeBackAddr)
 
 		if err != nil {
+			// fmt.Println(writeBackAddr, writeBackAddr2)
 			fmt.Println(genericErrMsg(connWriteErr, err))
 			continue
 		}
@@ -170,6 +194,12 @@ func primaryServer(network, addressRequiring, addressClient string) {
 		connTemp := conn
 		conn = conn2
 		conn2 = connTemp
+
+		/*
+		writeBackAddrTemp := writeBackAddr
+		writeBackAddr = writeBackAddr2
+		writeBackAddr2 = writeBackAddrTemp
+		*/
 	}
 }
 
