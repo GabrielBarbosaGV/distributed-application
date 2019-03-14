@@ -308,14 +308,14 @@ func client(wg *sync.WaitGroup) {
 
 	testString := "This is a test string."
 
-	raddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(hostName, requiringServerPort))
+	raddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(hostName, requiringServerPort))
 
 	if err != nil {
-		fmt.Println(genericErrMsg(resolveTCPErr, err))
+		fmt.Println(genericErrMsg(resolveUDPErr, err))
 		return
 	}
 
-	conn, err := net.DialTCP("tcp", nil, raddr)
+	conn, err := net.DialUDP("udp", nil, raddr)
 
 	if err != nil {
 		fmt.Println(genericErrMsg(clientDialErr, err))
@@ -366,14 +366,14 @@ func client(wg *sync.WaitGroup) {
 		return
 	}
 
-	raddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort(hostName, primaryServerPort))
+	raddr, err = net.ResolveUDPAddr("udp", net.JoinHostPort(hostName, primaryServerPort))
 
 	if err != nil {
-		fmt.Println(genericErrMsg(resolveTCPErr, err))
+		fmt.Println(genericErrMsg(resolveUDPErr, err))
 		return
 	}
 
-	conn, err = net.DialTCP("tcp", nil, raddr)
+	conn, err = net.DialUDP("udp", nil, raddr)
 
 	if err != nil {
 		fmt.Println(genericErrMsg(clientDialErr, err))
