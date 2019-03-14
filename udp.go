@@ -180,13 +180,13 @@ func requiringServer(network, address string) {
 
 	services := map[string]func(string) string{
 		"store": func(toStore string) string {
-			raddr, err := net.ResolveTCPAddr(network, net.JoinHostPort(hostName, primaryServerPort))
+			raddr, err := net.ResolveUDPAddr(network, net.JoinHostPort(hostName, primaryServerPort))
 
 			if err != nil {
-				fmt.Println(genericErrMsg(resolveTCPErr, err))
+				fmt.Println(genericErrMsg(resolveUDPErr, err))
 			}
 
-			conn, err := net.DialTCP(network, nil, raddr)
+			conn, err := net.DialUDP(network, nil, raddr)
 
 			if err != nil {
 				fmt.Println(genericErrMsg(primaryDialErr, err))
@@ -231,72 +231,52 @@ func requiringServer(network, address string) {
 		},
 	}
 
-	laddr, err := net.ResolveTCPAddr(network, address)
+	laddr, err := net.ResolveUDPAddr(network, address)
 
 	if err != nil {
-		fmt.Println(genericErrMsg(resolveTCPErr, err))
+		fmt.Println(genericErrMsg(resolveUDPErr, err))
 	}
 
-	ln, err := net.ListenTCP(network, laddr)
+	conn, err := net.ListenUDP(network, laddr)
 
 	if err != nil {
-		fmt.Println(genericErrMsg(tcpListenErr, err))
+		fmt.Println(genericErrMsg(udpListenErr, err))
 	}
+
+	reader := bufio.NewReader(conn)
 
 	for {
-		conn, err := ln.AcceptTCP()
+		message, err := reader.ReadString('\n')
 
 		if err != nil {
-			fmt.Println(genericErrMsg(acceptTCPErr, err))
+			fmt.Println(genericErrMsg(connReadErr, err))
+			continue
 		}
 
-		go func(connection *net.TCPConn) {
-			reader := bufio.NewReader(connection)
+		var req serviceRequest
+		err = json.Unmarshal([]byte(message), &req)
 
-			for {
-				message, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println(genericErrMsg(unmarshalErr, err))
+			continue
+		}
 
-				if err != nil {
-					fmt.Println(genericErrMsg(connReadErr, err))
-					connection.Close()
-					return
-				}
+		response := serviceResponse{services[req.ServiceName](req.Values), true}
 
-				var req serviceRequest
-				err = json.Unmarshal([]byte(message), &req)
+		res, err := json.Marshal(response)
 
-				if err != nil {
-					fmt.Println(genericErrMsg(unmarshalErr, err))
-					connection.Close()
-					return
-				}
+		if err != nil {
+			fmt.Println(genericErrMsg(marshalErr, err))
+			continue
+		}
 
-				response := serviceResponse{services[req.ServiceName](req.Values), true}
+		res = append(res, '\n')
+		_, err = conn.Write([]byte(res))
 
-				res, err := json.Marshal(response)
-
-				if err != nil {
-					fmt.Println(genericErrMsg(marshalErr, err))
-					connection.Close()
-					return
-				}
-
-				res = append(res, '\n')
-				_, err = connection.Write([]byte(res))
-
-				if err != nil {
-					fmt.Println(genericErrMsg(connWriteErr, err))
-					connection.Close()
-					return
-				}
-
-				if req.EndConn {
-					fmt.Println("Ending this connection")
-					connection.Close()
-					return
-				}
-			}
-		}(conn)
+		if err != nil {
+			fmt.Println(genericErrMsg(connWriteErr, err))
+			continue
+		}
 	}
 }
 
