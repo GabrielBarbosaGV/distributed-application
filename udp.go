@@ -106,22 +106,155 @@ func primaryServer(network, address string) {
 	udpAddr, err := net.ResolveUDPAddr(network, address)
 
 	if err != nil {
-		fmt.Println(genericErrMsg(udpAddrSolveErr, err))
+		fmt.Println("0", genericErrMsg(udpAddrSolveErr, err))
 		return
 	}
 
 	ln, err := net.ListenUDP(network, udpAddr)
 
 	if err != nil {
-		fmt.Println(genericErrMsg(udpListenErr, err))
+		fmt.Println("1", genericErrMsg(udpListenErr, err))
 		return
 	}
 
 	for {
-		conn, err := ln.AcceptTCP()
+		//buffer := make([]byte, 1024)
+
+		//n, addr, err := ln.ReadFromUDP(buffer)
+		//fmt.Println("UDP client : ", addr)
+		//fmt.Println("Received from UDP client :  ", string(buffer[:n]))
+		//conn, err := ln.Acceptudp()
+
+		//message := string(buffer[:n])
 
 		if err != nil {
-			fmt.Println(genericErrMsg(acceptUDPErr, err))
+			fmt.Println("2", genericErrMsg(acceptUDPErr, err))
+		}
+
+		go func(connection *net.UDPConn) {
+			reader := bufio.NewReader(connection)
+
+			for {
+				message, err := reader.ReadString('\n')
+
+				if err != nil {
+					fmt.Println("6", genericErrMsg(connReadErr, err))
+					connection.Close()
+					return
+				}
+
+				var req serviceRequest
+				err = json.Unmarshal([]byte(message), &req)
+
+				if err != nil {
+					fmt.Println("7", genericErrMsg(unmarshalErr, err))
+					return
+				}
+
+				response := serviceResponse{services[req.ServiceName](req.Values), true}
+
+				res, err := json.Marshal(response)
+
+				if err != nil {
+					fmt.Println("0", "0", genericErrMsg(marshalErr, err))
+				}
+
+				res = append(res, '\n')
+				_, err = connection.WriteToUDP(res, udpAddr)
+
+				if err != nil {
+					fmt.Println("0", "0", "0", genericErrMsg(connWriteErr, err))
+					connection.Close()
+					return
+				}
+
+				if req.EndConn {
+					fmt.Println("Ending this connection.")
+					connection.Close()
+					return
+				}
+			}
+		}(ln)
+	}
+}
+
+// Servidor requerente, serve ao cliente mas requer serviços do primário
+func requiringServer(network, address string) {
+	serverType := "Requiring Server"
+	genericErrMsg := newGenericErrMsgr(serverType, network, address)
+
+	storedString := "DEFAULT"
+
+	services := map[string]func(string) string{
+		"store": func(toStore string) string {
+			raddr, err := net.ResolveUDPAddr(network, net.JoinHostPort(hostName, primaryServerPort))
+
+			if err != nil {
+				fmt.Println("9", genericErrMsg(resolveUDPErr, err))
+			}
+
+			conn, err := net.DialUDP(network, nil, raddr)
+
+			if err != nil {
+				fmt.Println("10", genericErrMsg(primaryDialErr, err))
+				return cldntDial
+			}
+
+			request := serviceRequest{"rot13", toStore, false}
+
+			req, err := json.Marshal(request)
+
+			if err != nil {
+				fmt.Println("11", genericErrMsg(marshalErr, err))
+				return cldntReq
+			}
+
+			req = append(req, '\n')
+			_, err = conn.Write(req)
+
+			if err != nil {
+				fmt.Println("12", genericErrMsg(connWriteErr, err))
+				return cldntWrite
+			}
+
+			response, err := bufio.NewReader(conn).ReadString('\n')
+
+			if err != nil {
+				fmt.Println("13", genericErrMsg(connReadErr, err))
+				return cldntRead
+			}
+
+			var res serviceResponse
+			err = json.Unmarshal([]byte(response), &res)
+
+			if err != nil {
+				fmt.Println("14", genericErrMsg(unmarshalErr, err))
+				return cldntUnmarshal
+			}
+
+			storedString = res.Values
+
+			return res.Values
+		},
+	}
+
+	laddr, err := net.ResolveUDPAddr(network, address)
+
+	if err != nil {
+		fmt.Println("015", genericErrMsg(resolveUDPErr, err))
+	}
+
+	ln, err := net.ListenUDP(network, laddr)
+
+	if err != nil {
+		fmt.Println("016", genericErrMsg(udpListenErr, err))
+	}
+
+	for {
+		//conn, err := ln.Acceptudp()
+
+		if err != nil {
+			fmt.Println("17", genericErrMsg(acceptUDPErr, err))
 		}
 
 		go func(connection *net.UDPConn) {
@@ -141,132 +274,6 @@ func primaryServer(network, address string) {
 
 				if err != nil {
 					fmt.Println(genericErrMsg(unmarshalErr, err))
-					return
-				}
-
-				response := serviceResponse{services[req.ServiceName](req.Values), true}
-
-				res, err := json.Marshal(response)
-
-				if err != nil {
-					fmt.Println(genericErrMsg(marshalErr, err))
-				}
-
-				res = append(res, '\n')
-				_, err = connection.Write(res)
-
-				if err != nil {
-					fmt.Println(genericErrMsg(connWriteErr, err))
-					connection.Close()
-					return
-				}
-
-				if req.EndConn {
-					fmt.Println("Ending this connection.")
-					connection.Close()
-					return
-				}
-			}
-		}(conn)
-	}
-}
-
-// Servidor requerente, serve ao cliente mas requer serviços do primário
-func requiringServer(network, address string) {
-	serverType := "Requiring Server"
-	genericErrMsg := newGenericErrMsgr(serverType, network, address)
-
-	storedString := "DEFAULT"
-
-	services := map[string]func(string) string{
-		"store": func(toStore string) string {
-			raddr, err := net.ResolveTCPAddr(network, net.JoinHostPort(hostName, primaryServerPort))
-
-			if err != nil {
-				fmt.Println(genericErrMsg(resolveTCPErr, err))
-			}
-
-			conn, err := net.DialTCP(network, nil, raddr)
-
-			if err != nil {
-				fmt.Println(genericErrMsg(primaryDialErr, err))
-				return cldntDial
-			}
-
-			request := serviceRequest{"rot13", toStore, false}
-
-			req, err := json.Marshal(request)
-
-			if err != nil {
-				fmt.Println(genericErrMsg(marshalErr, err))
-				return cldntReq
-			}
-
-			req = append(req, '\n')
-			_, err = conn.Write(req)
-
-			if err != nil {
-				fmt.Println(genericErrMsg(connWriteErr, err))
-				return cldntWrite
-			}
-
-			response, err := bufio.NewReader(conn).ReadString('\n')
-
-			if err != nil {
-				fmt.Println(genericErrMsg(connReadErr, err))
-				return cldntRead
-			}
-
-			var res serviceResponse
-			err = json.Unmarshal([]byte(response), &res)
-
-			if err != nil {
-				fmt.Println(genericErrMsg(unmarshalErr, err))
-				return cldntUnmarshal
-			}
-
-			storedString = res.Values
-
-			return res.Values
-		},
-	}
-
-	laddr, err := net.ResolveTCPAddr(network, address)
-
-	if err != nil {
-		fmt.Println(genericErrMsg(resolveTCPErr, err))
-	}
-
-	ln, err := net.ListenTCP(network, laddr)
-
-	if err != nil {
-		fmt.Println(genericErrMsg(tcpListenErr, err))
-	}
-
-	for {
-		conn, err := ln.AcceptTCP()
-
-		if err != nil {
-			fmt.Println(genericErrMsg(acceptTCPErr, err))
-		}
-
-		go func(connection *net.TCPConn) {
-			reader := bufio.NewReader(connection)
-
-			for {
-				message, err := reader.ReadString('\n')
-
-				if err != nil {
-					fmt.Println(genericErrMsg(connReadErr, err))
-					connection.Close()
-					return
-				}
-
-				var req serviceRequest
-				err = json.Unmarshal([]byte(message), &req)
-
-				if err != nil {
-					fmt.Println(genericErrMsg(unmarshalErr, err))
 					connection.Close()
 					return
 				}
@@ -282,10 +289,10 @@ func requiringServer(network, address string) {
 				}
 
 				res = append(res, '\n')
-				_, err = connection.Write([]byte(res))
+				_, err = connection.WriteToUDP([]byte(res), laddr)
 
 				if err != nil {
-					fmt.Println(genericErrMsg(connWriteErr, err))
+					fmt.Println("030", genericErrMsg(connWriteErr, err))
 					connection.Close()
 					return
 				}
@@ -296,7 +303,7 @@ func requiringServer(network, address string) {
 					return
 				}
 			}
-		}(conn)
+		}(ln)
 	}
 }
 
@@ -308,14 +315,14 @@ func client(wg *sync.WaitGroup) {
 
 	testString := "This is a test string."
 
-	raddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(hostName, requiringServerPort))
+	raddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(hostName, requiringServerPort))
 
 	if err != nil {
-		fmt.Println(genericErrMsg(resolveTCPErr, err))
+		fmt.Println(genericErrMsg(resolveUDPErr, err))
 		return
 	}
 
-	conn, err := net.DialTCP("tcp", nil, raddr)
+	conn, err := net.DialUDP("udp", nil, raddr)
 
 	if err != nil {
 		fmt.Println(genericErrMsg(clientDialErr, err))
@@ -366,14 +373,14 @@ func client(wg *sync.WaitGroup) {
 		return
 	}
 
-	raddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort(hostName, primaryServerPort))
+	raddr, err = net.ResolveUDPAddr("udp", net.JoinHostPort(hostName, primaryServerPort))
 
 	if err != nil {
-		fmt.Println(genericErrMsg(resolveTCPErr, err))
+		fmt.Println(genericErrMsg(resolveUDPErr, err))
 		return
 	}
 
-	conn, err = net.DialTCP("tcp", nil, raddr)
+	conn, err = net.DialUDP("udp", nil, raddr)
 
 	if err != nil {
 		fmt.Println(genericErrMsg(clientDialErr, err))
@@ -407,7 +414,6 @@ func client(wg *sync.WaitGroup) {
 
 	fmt.Println(decipheredString)
 }
-
 func main() {
 	primaryServerAddress := net.JoinHostPort(hostName, primaryServerPort)
 	requiringServerAddress := net.JoinHostPort(hostName, requiringServerPort)
