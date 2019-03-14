@@ -166,8 +166,6 @@ func primaryServer(network, addressRequiring, addressClient string) {
 		var req serviceRequest
 		err = json.Unmarshal(message, &req)
 
-		fmt.Println(string(message[:]))
-
 		if err != nil {
 			fmt.Println(genericErrMsg(unmarshalErr, err))
 			continue
@@ -275,18 +273,19 @@ func requiringServer(network, address string) {
 		fmt.Println(genericErrMsg(udpListenErr, err))
 	}
 
-	reader := bufio.NewReader(conn)
-
 	for {
-		message, err := reader.ReadString('\n')
+		message := make([]byte, 1024)
+		_, writeBackAddr, err := conn.ReadFromUDP(message)
+
+		message = bytes.Trim(message, "\x00")
 
 		if err != nil {
-			fmt.Println(genericErrMsg(connReadErr, err))
+			fmt.Println(genericErrMsg(resolveUDPErr, err))
 			continue
 		}
 
 		var req serviceRequest
-		err = json.Unmarshal([]byte(message), &req)
+		err = json.Unmarshal(message, &req)
 
 		if err != nil {
 			fmt.Println(genericErrMsg(unmarshalErr, err))
@@ -303,7 +302,7 @@ func requiringServer(network, address string) {
 		}
 
 		res = append(res, '\n')
-		_, err = conn.Write([]byte(res))
+		_, err = conn.WriteTo([]byte(res), writeBackAddr)
 
 		if err != nil {
 			fmt.Println(genericErrMsg(connWriteErr, err))
