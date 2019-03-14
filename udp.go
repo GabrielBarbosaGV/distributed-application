@@ -10,10 +10,12 @@ import (
 
 // Server configuration strings
 const hostName,
-	primaryServerPort,
+	primaryToClientServerPort,
+	primaryToRequiringServerPort,
 	requiringServerPort,
 	network string = "localhost",
 	"8000",
+	"8002",
 	"8001",
 	"udp"
 
@@ -69,9 +71,9 @@ func newGenericErrMsgr(serverType, network, address string) func(string, error) 
 // serão acionadas como goroutines independentes
 
 // Servidor primário, oferece serviços ao cliente e ao servidor requerente
-func primaryServer(network, address string) {
+func primaryServer(network, addressRequiring, addressClient string) {
 	serverType := "Primary Server"
-	genericErrMsg := newGenericErrMsgr(serverType, network, address)
+	genericErrMsg := newGenericErrMsgr(serverType, network, addressRequiring + " " + addressClient)
 
 	// Os serviços oferecidos são funções guardadas em um map
 	services := map[string]func(string) string{
@@ -103,14 +105,28 @@ func primaryServer(network, address string) {
 		},
 	}
 
-	udpAddr, err := net.ResolveUDPAddr(network, address)
+	udpAddr, err := net.ResolveUDPAddr(network, addressRequiring)
 
 	if err != nil {
 		fmt.Println(genericErrMsg(udpAddrSolveErr, err))
 		return
 	}
 
-	ln, err := net.ListenUDP(network, udpAddr)
+	conn, err := net.ListenUDP(network, udpAddr)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(udpListenErr, err))
+		return
+	}
+
+	udpAddr2, err := net.ResolveUDPAddr(network, addressClient)
+
+	if err != nil {
+		fmt.Println(genericErrMsg(udpAddrSolveErr, err))
+		return
+	}
+
+	conn2, err := net.ListenUDP(network, udpAddr2)
 
 	if err != nil {
 		fmt.Println(genericErrMsg(udpListenErr, err))
@@ -118,56 +134,42 @@ func primaryServer(network, address string) {
 	}
 
 	for {
-		conn, err := ln.AcceptTCP()
+		message, err := bufio.NewReader(conn).ReadString('\n')
 
 		if err != nil {
-			fmt.Println(genericErrMsg(acceptUDPErr, err))
+			fmt.Println(genericErrMsg(connReadErr, err))
+			conn.Close()
+			continue
 		}
 
-		go func(connection *net.UDPConn) {
-			reader := bufio.NewReader(connection)
+		var req serviceRequest
+		err = json.Unmarshal([]byte(message), &req)
 
-			for {
-				message, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println(genericErrMsg(unmarshalErr, err))
+			continue
+		}
 
-				if err != nil {
-					fmt.Println(genericErrMsg(connReadErr, err))
-					connection.Close()
-					return
-				}
+		response := serviceResponse{services[req.ServiceName](req.Values), true}
 
-				var req serviceRequest
-				err = json.Unmarshal([]byte(message), &req)
+		res, err := json.Marshal(response)
 
-				if err != nil {
-					fmt.Println(genericErrMsg(unmarshalErr, err))
-					return
-				}
+		if err != nil {
+			fmt.Println(genericErrMsg(marshalErr, err))
+		}
 
-				response := serviceResponse{services[req.ServiceName](req.Values), true}
+		res = append(res, '\n')
+		_, err = conn.Write(res)
 
-				res, err := json.Marshal(response)
+		if err != nil {
+			fmt.Println(genericErrMsg(connWriteErr, err))
+			continue
+		}
 
-				if err != nil {
-					fmt.Println(genericErrMsg(marshalErr, err))
-				}
-
-				res = append(res, '\n')
-				_, err = connection.Write(res)
-
-				if err != nil {
-					fmt.Println(genericErrMsg(connWriteErr, err))
-					connection.Close()
-					return
-				}
-
-				if req.EndConn {
-					fmt.Println("Ending this connection.")
-					connection.Close()
-					return
-				}
-			}
-		}(conn)
+		// Alternando conexões
+		connTemp := conn
+		conn = conn2
+		conn2 = connTemp
 	}
 }
 
@@ -180,7 +182,7 @@ func requiringServer(network, address string) {
 
 	services := map[string]func(string) string{
 		"store": func(toStore string) string {
-			raddr, err := net.ResolveUDPAddr(network, net.JoinHostPort(hostName, primaryServerPort))
+			raddr, err := net.ResolveUDPAddr(network, net.JoinHostPort(hostName, primaryToRequiringServerPort))
 
 			if err != nil {
 				fmt.Println(genericErrMsg(resolveUDPErr, err))
@@ -346,7 +348,7 @@ func client(wg *sync.WaitGroup) {
 		return
 	}
 
-	raddr, err = net.ResolveUDPAddr("udp", net.JoinHostPort(hostName, primaryServerPort))
+	raddr, err = net.ResolveUDPAddr("udp", net.JoinHostPort(hostName, primaryToClientServerPort))
 
 	if err != nil {
 		fmt.Println(genericErrMsg(resolveUDPErr, err))
@@ -389,10 +391,11 @@ func client(wg *sync.WaitGroup) {
 }
 
 func main() {
-	primaryServerAddress := net.JoinHostPort(hostName, primaryServerPort)
+	primaryToRequiringServerAddress := net.JoinHostPort(hostName, primaryToRequiringServerPort)
+	primaryToClientServerAddress := net.JoinHostPort(hostName, primaryToClientServerPort)
 	requiringServerAddress := net.JoinHostPort(hostName, requiringServerPort)
 
-	go primaryServer(network, primaryServerAddress)
+	go primaryServer(network, primaryToRequiringServerAddress, primaryToClientServerAddress)
 	go requiringServer(network, requiringServerAddress)
 
 	var wg sync.WaitGroup
